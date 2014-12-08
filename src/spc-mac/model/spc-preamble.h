@@ -32,6 +32,7 @@ class SpcPreamble
 public:
   SpcPreamble ();
   ~SpcPreamble ();
+  void SetIsFar (bool isFar);
   void SetRate (uint32_t rate);
   void SetPower (double power);
   void SetBandwidth (uint32_t bandwidth);
@@ -39,6 +40,7 @@ public:
   void SetNLength (uint32_t length);
   void SetFLength (uint32_t length);
   void SetDuration (Time duration);
+  bool GetIsFar ();
   uint32_t GetRate ();
   double GetPower ();
   uint32_t GetBandwidth ();
@@ -47,6 +49,7 @@ public:
   uint32_t GetNLength ();
   uint32_t GetFLength ();
 private:
+  bool m_isFar;
   uint32_t m_rate;
   uint32_t m_bandwidth;
   double m_power;

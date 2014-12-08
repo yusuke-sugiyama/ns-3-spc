@@ -474,7 +474,7 @@ SpcInterferenceHelper::CalculateSnrPer2 (Ptr<SpcInterferenceHelper::Event> event
   double snr1, snr2;
   double per1, per2;
 
-  if (powRate1 >= 0.5)
+  if (preamble.GetIsFar ())
     {
       noise = event->GetRxPowerW () * powRate2;
       snr1 = CalculateSnr (event->GetRxPowerW () * powRate1,

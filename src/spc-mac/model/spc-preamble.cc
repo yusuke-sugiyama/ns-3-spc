@@ -42,6 +42,11 @@ SpcPreamble::SetPower (double power){
 }
 
 void
+SpcPreamble::SetIsFar (bool isFar){
+  m_isFar = isFar;
+}
+
+void
 SpcPreamble::SetRate (uint32_t rate){
   m_rate = rate;
 }
@@ -79,6 +84,11 @@ SpcPreamble::GetPower (){
 uint32_t
 SpcPreamble::GetRate (){
   return m_rate;
+}
+
+bool
+SpcPreamble::GetIsFar (){
+  return m_isFar;
 }
 
 uint32_t

@@ -111,7 +111,7 @@ public:
   void InitSend ();
   void SetNav (Time duration);
 
-  struct PowerTimeRate CalculatePowerTimeRate (double passLoss1, double passLoss2, uint32_t size1, uint32_t size2, uint32_t bandwidth);
+  struct PowerTimeRate CalculatePowerTimeRate (double passLoss1, double passLoss2, uint32_t size1, uint32_t size2, uint32_t bandwidth, bool *isFar);
   struct TimeRate CalculateTimeRate (double passLoss, uint32_t size, uint32_t bandwidth);
   TimeNum1Num2 GetWaitTimeForBuffer (void);
   void SetState (void);

@@ -558,33 +558,42 @@ SpcMac::ReceiveError (Ptr<Packet> packet)
 struct SpcMac::TimeRate
 SpcMac::CalculateTimeRate (double passLoss, uint32_t size, uint32_t bandwidth)
 {
-  double optRate = bandwidth * log2 (1 + (passLoss / GetNoiseFloor (bandwidth)));
+  double optRate = bandwidth * log2 (1 + (passLoss / GetNoiseFloor (bandwidth))) / 8;
   NS_LOG_DEBUG ("passLoss: "    << passLoss  <<
 		", noise: "     << GetNoiseFloor (bandwidth) <<
 		", ratio: "     << (passLoss / GetNoiseFloor (bandwidth)) <<
 		", size: "      << size      <<
 		", bandwidth: " << bandwidth <<
 		", optRate: "   << optRate   <<
-		", time: "      << Seconds(size / (optRate / 8)));
+		", time: "      << Seconds(size / optRate));
   struct TimeRate timeRate;
-  timeRate.time = Seconds(size / (optRate / 8));
-  timeRate.rate = optRate / 8;
+  timeRate.time = Seconds((double)size / optRate);
+  timeRate.rate = optRate;
   return timeRate;
 }
 
 struct SpcMac::PowerTimeRate
-SpcMac::CalculatePowerTimeRate (double passLoss1, double passLoss2, uint32_t size1, uint32_t size2, uint32_t bandwidth)
+SpcMac::CalculatePowerTimeRate (double passLoss1, double passLoss2, uint32_t size1, uint32_t size2, uint32_t bandwidth, bool *isFar)
 {
   double minEndTime = sizeof(double);
   double optPower = 0;
   uint32_t optRate = 0;
 
+  if (passLoss1 < passLoss2)
+    {
+      *isFar = true;
+    }
+  else
+    {
+      *isFar = false;
+    }
   for (double power = 0.1; power < 1.0; power += 0.01)
     {
       double pow1 = power;
       double pow2 = 1 - power;
       double t1, t2;
-      if (pow1 >= 0.5)
+      //      if (pow1 >= 0.5)
+      if (*isFar)
 	{
 	  t1 = (pow1 * passLoss1) / (pow2 * passLoss1 + GetNoiseFloor (bandwidth));
 	  t2 = (pow2 * passLoss2) / GetNoiseFloor (bandwidth);
@@ -616,7 +625,6 @@ SpcMac::CalculatePowerTimeRate (double passLoss1, double passLoss2, uint32_t siz
   powerTimeRate.power = optPower;
   powerTimeRate.rate  = optRate;
   powerTimeRate.time  = Seconds (minEndTime);
-  /*
   NS_LOG_DEBUG ("passLoss1: "    << passLoss1  <<
 		", passLoss2: "  << passLoss2  <<
 		", size1: "      << size1      <<
@@ -625,7 +633,6 @@ SpcMac::CalculatePowerTimeRate (double passLoss1, double passLoss2, uint32_t siz
 		", optRate: "    << optRate    <<
 		", optPower: "   << optPower   <<
 		", minTime:"     << Seconds (minEndTime));
-  */
 
   return powerTimeRate;
 }
@@ -659,12 +666,13 @@ SpcMac::GetWaitTimeForBuffer (void)
     {
       for (uint32_t j = 1; j <= m_restrictionPacketNum; j++)
 	{
+	  bool isFar;
 	  struct SpcMac::PowerTimeRate ptr;
 	  uint32_t s1 = size1 * i + hdr.GetSize () + fcs.GetSize (); 
 	  uint32_t s2 = size2 * j + hdr.GetSize () + fcs.GetSize (); 
 	  ptr = CalculatePowerTimeRate (passLoss1, passLoss2,
 					s1, s2,
-					preamble.GetBandwidth ());
+					preamble.GetBandwidth (), &isFar);
 	  if(ptr.time <= tnn.time)
 	    {
 	      tnn.num1 = i;
@@ -700,6 +708,7 @@ SpcMac::SetState ()
 	{
 	  NS_LOG_DEBUG ("spc send");
 	  m_sendState = SPC;
+	  //m_sendState = FIRST;
 	}
     }
   // m_currentPacket1が存在する場合
@@ -775,33 +784,6 @@ SpcMac::SendCtsAfterRts (Mac48Address source, double rssi)
   SpcPreamble preamble;
 
   m_phy->StartSend (packet, preamble); 
-}
-
-uint8_t
-SpcMac::ConvertRssiToDbm (double rssi) const
-{
-  int dbm = 10.0 * std::log10 (rssi);
-  uint8_t convert;
-  if (dbm >= 127)
-    {
-      convert = 255;
-    }
-  else if (dbm <= -127)
-    {
-      convert = 0;
-    }
-  else
-    {
-      convert = dbm += 127 - 1;
-    }
-  return convert;
-}
-
-double
-SpcMac::ConvertRssiToW (uint8_t rssi) const
-{
-  double w = std::pow (10.0, (rssi - 127) / 10.0);
-  return w;
 }
 
 void
@@ -933,13 +915,14 @@ SpcMac::SendSpcDataAfterCtsSpc ()
   SpcMacTrailer fcs;
   hdrUni.SetType (SPC_MAC_DATA);
   hdrSpc.SetType (SPC_MAC_DATA_SPC);
+  bool isFar;
   double passLoss1 = m_nodeTable->GetPassLoss (m_currentHdr1.GetAddr1 ());
   double passLoss2 = m_nodeTable->GetPassLoss (m_currentHdr2.GetAddr1 ());
   struct PowerTimeRate spc = CalculatePowerTimeRate (passLoss1,
 						     passLoss2,
 						     packet1->GetSize () + hdrSpc.GetSize () + fcs.GetSize (),
 						     packet2->GetSize () + hdrSpc.GetSize () + fcs.GetSize (),
-						     preamble.GetBandwidth ());
+						     preamble.GetBandwidth (), &isFar);
   struct TimeRate uni1 = CalculateTimeRate (passLoss1,
 					    packet1->GetSize () + hdrUni.GetSize () + fcs.GetSize (),
 					    preamble.GetBandwidth ());
@@ -966,6 +949,7 @@ SpcMac::SendSpcDataAfterCtsSpc ()
       uint32_t maxSymbols = std::max (packet1->GetSize (), packet2->GetSize ());
       m_powerRate = spc.power;
       m_rate = spc.rate;
+      preamble.SetIsFar (isFar);
       preamble.SetRate (m_rate);
       preamble.SetPower (m_powerRate);
       preamble.SetSymbols (maxSymbols);
@@ -1146,7 +1130,7 @@ SpcMac::StartBackoff ()
       m_tnn = GetWaitTimeForBuffer ();
       if (m_tnn.time > duration )
 	{
-	  duration = m_tnn.time - duration;
+	  //	  duration = m_tnn.time - duration;
 	}
     }
   m_backoffTimeoutEvent = Simulator::Schedule (duration, &SpcMac::BackoffTimeout, this);
@@ -1290,5 +1274,31 @@ SpcMac::AckTimeout2 ()
     }
 }
 
+uint8_t
+SpcMac::ConvertRssiToDbm (double rssi) const
+{
+  int dbm = 10.0 * std::log10 (rssi);
+  uint8_t convert;
+  if (dbm >= 127)
+    {
+      convert = 255;
+    }
+  else if (dbm <= -127)
+    {
+      convert = 0;
+    }
+  else
+    {
+      convert = dbm += 127 - 1;
+    }
+  return convert;
+}
+
+double
+SpcMac::ConvertRssiToW (uint8_t rssi) const
+{
+  double w = std::pow (10.0, (rssi - 127) / 10.0);
+  return w;
+}
 
 } // namespace ns3
