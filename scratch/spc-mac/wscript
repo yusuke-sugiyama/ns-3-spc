@@ -1,0 +1,6 @@
+import wutils
+import os
+import Options
+
+def options(opt):
+          (spc-apps.cc spc-main.cc spc-apps.h)

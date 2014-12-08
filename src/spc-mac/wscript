@@ -1,0 +1,56 @@
+
+# -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+
+# def options(opt):
+#     pass
+
+# def configure(conf):
+#     conf.check_nonfatal(header_name='stdint.h', define_name='HAVE_STDINT_H')
+
+def build(bld):
+    module = bld.create_ns3_module('spc-mac', ['core', 'network'])
+    module.source = [
+	'model/spc-net-device.cc',
+	'model/spc-mac.cc',
+	'model/spc-phy.cc',
+	'model/spc-channel.cc',
+	'model/spc-phy-state-helper.cc',
+	'model/spc-mac-queue.cc',
+	'model/spc-mac-header.cc',
+	'model/spc-mac-trailer.cc',
+	'model/spc-preamble.cc',
+	'model/spc-interference-helper.cc',
+        'model/spc-random-stream.cc',
+        'model/node-information-table.cc',
+        'model/packet-info.cc'
+        ]
+
+    module_test = bld.create_ns3_module_test_library('spc-mac')
+    module_test.source = [
+        'test/spc-test-suite.cc',
+        ]
+
+    headers = bld(features='ns3header')
+    headers.module = 'spc-mac'
+    headers.source = [
+	'model/spc-net-device.h',
+	'model/spc-mac.h',
+	'model/spc-phy.h',
+	'model/spc-channel.h',
+	'model/spc-phy-state.h',
+	'model/spc-phy-state-helper.h',
+	'model/spc-mac-queue.h',
+	'model/spc-mac-header.h',
+	'model/spc-mac-trailer.h',
+	'model/spc-preamble.h',
+	'model/spc-interference-helper.h',
+        'model/spc-random-stream.h',
+        'model/node-information-table.h',
+        'model/packet-info.h'
+        ]
+
+    if bld.env.ENABLE_EXAMPLES:
+        bld.recurse('examples')
+
+    # bld.ns3_python_bindings()
+
