@@ -137,8 +137,9 @@ private:
   double CalculateNoiseInterferenceW (Ptr<Event> event, NiChanges *ni) const;
   double CalculateSnr (double signal, double noiseInterference, SpcPreamble preamble) const;
   bool CheckChunkShannonCapacity (double snir, Time duration, SpcPreamble preamble) const;
+  bool CheckChunkShannonCapacity (double snir, Time duration, SpcPreamble preamble, uint32_t totalBytes, uint32_t *currentBytes) const;
   double CalculatePer (Ptr<const Event> event, NiChanges *ni) const;
-  double CalculatePer (Ptr<const Event> event, NiChanges *ni, double power, double noise) const;
+  double CalculatePer (Ptr<const Event> event, NiChanges *ni, double power, double noise, uint32_t totalBytes) const;
 
   double m_noiseFigure; /**< noise figure (linear) */
   /// Experimental: needed for energy duration calculation

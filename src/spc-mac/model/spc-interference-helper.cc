@@ -244,6 +244,50 @@ SpcInterferenceHelper::CalculateNoiseInterferenceW (Ptr<SpcInterferenceHelper::E
 }
 
 bool
+SpcInterferenceHelper::CheckChunkShannonCapacity (double snir, Time duration, SpcPreamble preamble,
+                                                  uint32_t totalBytes, uint32_t *currentBytes) const
+{
+  if (duration == NanoSeconds (0))
+    {
+      return true;
+    }
+
+  uint32_t rate = preamble.GetRate ();
+  uint64_t nbytes = (uint64_t)(rate * duration.GetSeconds ());
+  uint64_t shannonBits = preamble.GetBandwidth () * log2 (1 + snir);
+  uint64_t shannonBytes = shannonBits / 8;
+  shannonBytes = shannonBytes * duration.GetSeconds ();
+
+  if (*currentBytes == totalBytes)
+    {
+      NS_LOG_DEBUG ("[mark] equal");
+      return true;
+    }
+  else if (totalBytes >= (*currentBytes + nbytes))
+    {
+      NS_LOG_DEBUG ("[mark] totalBytes > current + nbytes");
+      *currentBytes += nbytes;
+    }
+  else
+    {
+      NS_LOG_DEBUG ("[mark] totalBytes < current + nbytes");
+      nbytes = totalBytes - *currentBytes;
+      *currentBytes = totalBytes;
+    }
+  
+  NS_LOG_DEBUG ("[Slimit]: " << shannonBytes << ", [Bytes]:" << nbytes << ", [SNIR]:" << snir << " , [D]:" << duration);
+    
+  if (shannonBytes >= nbytes)
+    {
+      return true;
+    }
+  else
+    {
+      return false;
+    }
+}
+
+bool
 SpcInterferenceHelper::CheckChunkShannonCapacity (double snir, Time duration, SpcPreamble preamble) const
 {
   if (duration == NanoSeconds (0))
@@ -252,14 +296,14 @@ SpcInterferenceHelper::CheckChunkShannonCapacity (double snir, Time duration, Sp
     }
 
   uint32_t rate = preamble.GetRate ();
-  uint64_t nbits = (uint64_t)(rate * duration.GetSeconds ());
+  uint64_t nbytes = (uint64_t)(rate * duration.GetSeconds ());
   uint64_t shannonBits = preamble.GetBandwidth () * log2 (1 + snir);
-  shannonBits /= 8;
-  shannonBits = shannonBits * duration.GetSeconds ();
-  //  std::cout << "[Slimit]: " << shannonBits << ", [Bit]:" << nbits << ", [SNIR]:" << snir << " , [D]:" << duration << std::endl;
-  NS_LOG_DEBUG ("[Slimit]: " << shannonBits << ", [Bit]:" << nbits << ", [SNIR]:" << snir << " , [D]:" << duration);
+  uint64_t shannonBytes = shannonBits / 8;
+  shannonBytes = shannonBytes * duration.GetSeconds ();
+
+  NS_LOG_DEBUG ("[Slimit]: " << shannonBytes << ", [Bytes]:" << nbytes << ", [SNIR]:" << snir << " , [D]:" << duration);
     
-  if (shannonBits >= nbits)
+  if (shannonBytes >= nbytes)
     {
       return true;
     }
@@ -332,7 +376,7 @@ SpcInterferenceHelper::CalculatePer (Ptr<const SpcInterferenceHelper::Event> eve
 }
 
 double
-SpcInterferenceHelper::CalculatePer (Ptr<const SpcInterferenceHelper::Event> event, NiChanges *ni, double power, double noise) const
+SpcInterferenceHelper::CalculatePer (Ptr<const SpcInterferenceHelper::Event> event, NiChanges *ni, double power, double noise, uint32_t totalBytes) const
 {
   SpcPreamble preambleHdr;
   double snr;
@@ -342,18 +386,21 @@ SpcInterferenceHelper::CalculatePer (Ptr<const SpcInterferenceHelper::Event> eve
 
   Time preambleStart = (*j).GetTime ();
   Time payloadStart  = (*j).GetTime () + event->GetPreamble ().GetDuration ();
+  double normalNoiseInterferenceW = (*j).GetDelta ();
   double noiseInterferenceW = (*j).GetDelta () + noise;
+  double allPowerW = event->GetRxPowerW ();
   double powerW = event->GetRxPowerW () * power;
 
   j++;
-
+  uint32_t currentBytes = 0;
+  NS_LOG_DEBUG ("total Bytes=" << totalBytes);
   while (ni->end () != j)
     {
       Time current = (*j).GetTime ();
       if (payloadStart > previous && payloadStart < current)
         {
           // Header
-          snr = CalculateSnr (powerW, noiseInterferenceW, preambleHdr);
+          snr = CalculateSnr (allPowerW, normalNoiseInterferenceW, preambleHdr);
           if (!CheckChunkShannonCapacity (snr, payloadStart - previous, preambleHdr))
             {
               return 1;
@@ -361,7 +408,7 @@ SpcInterferenceHelper::CalculatePer (Ptr<const SpcInterferenceHelper::Event> eve
                                         
           // Payload
           snr = CalculateSnr (powerW, noiseInterferenceW, event->GetPreamble ());
-          if (!CheckChunkShannonCapacity (snr, current - payloadStart, event->GetPreamble ()))
+          if (!CheckChunkShannonCapacity (snr, current - payloadStart, event->GetPreamble (), totalBytes ,&currentBytes))
             {
               return 1;
             }
@@ -369,7 +416,7 @@ SpcInterferenceHelper::CalculatePer (Ptr<const SpcInterferenceHelper::Event> eve
       else if (payloadStart >= current)
         {
           // Header
-          snr = CalculateSnr (powerW, noiseInterferenceW, preambleHdr);
+          snr = CalculateSnr (allPowerW, normalNoiseInterferenceW, preambleHdr);
           if (!CheckChunkShannonCapacity (snr , current - previous, preambleHdr))
             {
               return 1;
@@ -379,7 +426,7 @@ SpcInterferenceHelper::CalculatePer (Ptr<const SpcInterferenceHelper::Event> eve
         {
           // Payload
           snr = CalculateSnr (powerW, noiseInterferenceW, event->GetPreamble ());
-          if (!CheckChunkShannonCapacity (snr, current - previous, event->GetPreamble ()))
+          if (!CheckChunkShannonCapacity (snr, current - previous, event->GetPreamble (), totalBytes ,&currentBytes))
             {
               return 1;
             }
@@ -437,14 +484,14 @@ SpcInterferenceHelper::CalculateSnrPer2 (Ptr<SpcInterferenceHelper::Event> event
                            noiseInterferenceW,
                            event->GetPreamble ());
 
-      per1 = CalculatePer (event, &ni, powRate1, noise);
+      per1 = CalculatePer (event, &ni, powRate1, noise, event->GetPreamble ().GetNLength ());
       if (per1 == 1)
         {
           per2 = 1;
         }
       else
         {
-          per2 = CalculatePer (event, &ni, powRate2, 0);
+          per2 = CalculatePer (event, &ni, powRate2, 0, event->GetPreamble ().GetFLength ());
         }
     }
   else
@@ -456,14 +503,14 @@ SpcInterferenceHelper::CalculateSnrPer2 (Ptr<SpcInterferenceHelper::Event> event
       snr2 = CalculateSnr (event->GetRxPowerW () * powRate2,
                            noiseInterferenceW + noise,
                            event->GetPreamble ());
-      per2 = CalculatePer (event, &ni, powRate2, noise);
+      per2 = CalculatePer (event, &ni, powRate2, noise, event->GetPreamble ().GetFLength ());
       if (per2 == 1)
         {
           per1 = 1;
         }
       else
         {
-          per1 = CalculatePer (event, &ni, powRate1, 0);
+          per1 = CalculatePer (event, &ni, powRate1, 0, event->GetPreamble ().GetNLength ());
         }
     }
 
